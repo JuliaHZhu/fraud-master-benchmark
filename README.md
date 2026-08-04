@@ -2,7 +2,7 @@
 
 基于明代张应俞《骗经》（24类83则诈骗案例）构建的中文诈骗识别与对抗评测基准。
 
-📚 **[文白对照与讲解](docs/README.md)** | 📜 **[原文 TXT](骗经_utf8.txt)**
+📚 **[中文文白对照与讲解](docs/bilingual/)** | 📖 **[英文分类详解](docs/bilingual-en/)** | 📜 **[原始文本](骗经_utf8.txt)**
 
 ---
 
@@ -14,6 +14,10 @@
 | 诈骗类型识别 (24类) | 49 | 17 | 17 | 脱剥骗/丢包骗/换银骗... |
 | 红队对抗测试 | - | - | 12 | 6类攻击策略 |
 | 诈骗要素抽取 | - | - | 83 | 待人工标注 |
+
+**数据目录:**
+- `datasets/` — 原始数据集
+- `datasets_v2/` — 清洗后数据集（推荐使用）
 
 ---
 
@@ -115,6 +119,22 @@ python scripts/eval_fraud_benchmark.py redteam --pred redteam_results.jsonl
 
 ---
 
+## 项目结构
+
+```
+fraud-master-benchmark/
+├── datasets/              # 原始数据集
+├── datasets_v2/           # 清洗后数据集（推荐）
+├── docs/
+│   ├── bilingual/         # 中文文白对照讲解（24类）
+│   └── bilingual-en/      # 英文分类详解（24类）
+├── scripts/               # 评测与生成脚本
+├── 骗经_utf8.txt          # 原始文本
+└── README.md
+```
+
+---
+
 ## 扩展建议
 
 1. **规模扩展**: 用 LLM 对每个案例生成多个变体（现代语境、不同长度、不同视角）
@@ -128,7 +148,12 @@ python scripts/eval_fraud_benchmark.py redteam --pred redteam_results.jsonl
 
 若使用本基准，请引用:
 
+```bibtex
+@misc{pj-fraud-bench,
+  title = {骗经 Fraud Benchmark (PJ-Fraud-Bench)},
+  year = {2026},
+  howpublished = {\url{https://github.com/JuliaHZhu/fraud-master-benchmark}}
+}
 ```
-骗经 Fraud Benchmark (PJ-Fraud-Bench)
-Based on: 张应俞《骗经》(Ming Dynasty)
-```
+
+原始文献: 张应俞《骗经》（明代）
