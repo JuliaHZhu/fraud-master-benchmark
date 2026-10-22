@@ -1,0 +1,50 @@
+{
+  "case_id": "pj-07-yindu",
+  "category": "引赌骗",
+  "title": "博戏小赢·客栈后院",
+  "source": "《骗经·引赌骗》改写",
+  "you": "行商途中在客栈歇脚，随身带了一百二十两货款",
+  "counterparty": "院里的客商，说夜里无聊，邀你玩两把骰子",
+  "scenes": [
+    {"id": 1, "name": "设法", "text": "几人围着一张桌，客商拉你：「玩个小注，一两起步，打发夜里。」\n桌上已有人输了十几两，正恨恨地掏钱。", "probes": [
+      {"id": "s1a", "label": "看骰盘与那几人的手法", "cost": 0.1, "rel": 0.8},
+      {"id": "s1b", "label": "问店小二这几人底细", "cost": 0.2, "rel": 0.65}
+    ]},
+    {"id": 2, "name": "示信", "text": "头两把你赢了，客商笑着把碎银推过来，还多给一点。\n「你手气旺，多玩几把。」同一张桌上，输的那人又输了。", "probes": [
+      {"id": "s2a", "label": "收手去数赢来的银子", "cost": 0.0, "rel": 0.75},
+      {"id": "s2b", "label": "换个自己带来的骰", "cost": 0.2, "rel": 0.8}
+    ]},
+    {"id": 3, "name": "小试", "text": "第三把押五两，你还是赢了，银锭堆到自己手边。\n旁人起哄：「这运气，押大一些才值当。」", "probes": [
+      {"id": "s3a", "label": "把赢来的银子验一验", "cost": 0.1, "rel": 0.6}
+    ]},
+    {"id": 4, "name": "加注", "text": "客商说不如一把定胜负，押五十两。你手边正好有货款。\n「你刚赢了三把，还能输？」", "probes": [
+      {"id": "s4a", "label": "摊牌：只玩手里赢的钱", "cost": 0.0, "rel": 0.85},
+      {"id": "s4b", "label": "要求换骰换人发", "cost": 0.3, "rel": 0.8}
+    ]},
+    {"id": 5, "name": "收网", "text": "骰盘已摆好，五十两堆在桌上，满院人看着你。\n押下去，就再没回头路。", "probes": [
+      {"id": "s5a", "label": "起身收钱走人", "cost": 0.0, "rel": 0.9}
+    ]}
+  ],
+  "types": {
+    "honest": {"note": "真赌，输赢各半，只是劝你少玩"},
+    "small_scam": {"note": "头几把故意输，钓你押大"},
+    "long_con": {"note": "整个院子都是一伙，三步一坑"}
+  },
+  "truth": {
+    "s1a": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s1b": {"honest": 0, "small_scam": 0, "long_con": 1},
+    "s2a": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s2b": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s3a": {"honest": 0, "small_scam": 0, "long_con": 1},
+    "s4a": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s4b": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s5a": {"honest": 0, "small_scam": 1, "long_con": 1}
+  },
+  "false_alarm": {"s1b": {"honest": 0.2}},
+  "optimal_exit": {"honest": 5, "small_scam": 4, "long_con": 2},
+  "payoff": {
+    "honest": {"early": -1, "mid": 6, "deal": 2},
+    "small_scam": {"early": -1, "mid": 6, "deal": -54},
+    "long_con": {"early": -1, "mid": 6, "deal": -120}
+  }
+}

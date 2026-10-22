@@ -1,0 +1,50 @@
+{
+  "case_id": "pj-11-sengdao",
+  "category": "僧道骗",
+  "title": "游方看相·老母病",
+  "source": "《骗经·僧道骗》改写",
+  "you": "家中老母久病、求医无门的当家人",
+  "counterparty": "自称从五台山来的游方僧，能看气色、懂药方",
+  "scenes": [
+    {"id": 1, "name": "设饵", "text": "僧人上门化斋，一见你便说：「家中有人病在床，气色不顺。」\n他说得极准，又说三日之内可治，只需香火钱。", "probes": [
+      {"id": "s1a", "label": "问他如何得知家中有人病", "cost": 0.0, "rel": 0.7},
+      {"id": "s1b", "label": "请本地郎中一并来看", "cost": 0.4, "rel": 0.8}
+    ]},
+    {"id": 2, "name": "示信", "text": "他拿出一小包药末，说先服一剂，不收分文。\n「佛门不问钱，先看病人有没有缘。」", "probes": [
+      {"id": "s2a", "label": "把药末拿去给药铺看", "cost": 0.2, "rel": 0.8},
+      {"id": "s2b", "label": "问他住哪座寺、度牒何在", "cost": 0.1, "rel": 0.75}
+    ]},
+    {"id": 3, "name": "小试", "text": "老母服下后夜里安稳睡了一觉，家里人都说这僧有本事。\n僧人不提钱，只在院子里念经。", "probes": [
+      {"id": "s3a", "label": "细想这一夜安稳是否真因药", "cost": 0.1, "rel": 0.7}
+    ]},
+    {"id": 4, "name": "加注", "text": "僧人说病根已移到骨里，需请一尊开光佛像供在家中，价银三十两。\n「钱是给佛的，不是给我的。」", "probes": [
+      {"id": "s4a", "label": "要求先看佛像与开光凭证", "cost": 0.3, "rel": 0.85},
+      {"id": "s4b", "label": "去寺里核对他的身份", "cost": 0.5, "rel": 0.9}
+    ]},
+    {"id": 5, "name": "收网", "text": "佛像已请到门口，僧人合掌等你交银。\n老母在里屋咳了两声。", "probes": [
+      {"id": "s5a", "label": "银子先不付，另请郎中复看", "cost": 0.2, "rel": 0.9}
+    ]}
+  ],
+  "types": {
+    "honest": {"note": "真是游方僧，药只是安神之物"},
+    "small_scam": {"note": "药是甘草，骗的是香火钱"},
+    "long_con": {"note": "先说准病情（问过街坊），再卖开光佛像"}
+  },
+  "truth": {
+    "s1a": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s1b": {"honest": 0, "small_scam": 0, "long_con": 0},
+    "s2a": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s2b": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s3a": {"honest": 0, "small_scam": 0, "long_con": 1},
+    "s4a": {"honest": 0, "small_scam": 0, "long_con": 1},
+    "s4b": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s5a": {"honest": 0, "small_scam": 1, "long_con": 1}
+  },
+  "false_alarm": {"s1a": {"honest": 0.2}},
+  "optimal_exit": {"honest": 5, "small_scam": 4, "long_con": 3},
+  "payoff": {
+    "honest": {"early": -1, "mid": -2, "deal": 4},
+    "small_scam": {"early": -1, "mid": -2, "deal": -30},
+    "long_con": {"early": -1, "mid": -2, "deal": -30}
+  }
+}

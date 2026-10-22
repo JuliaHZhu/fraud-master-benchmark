@@ -1,0 +1,50 @@
+{
+  "case_id": "pj-12-liandan",
+  "category": "炼丹骗",
+  "title": "点铁成银·丹客",
+  "source": "《骗经·炼丹骗》改写",
+  "you": "多年攒下三百两的粮行老板，最慕一夜暴富的门道",
+  "counterparty": "自称从龙虎山来的丹客，随身带一只小炉与几味药",
+  "scenes": [
+    {"id": 1, "name": "设饵", "text": "丹客说你面相有财气，可授你烧炼之法，铅三钱可成银一两。\n「先借你一两本银，当场炼给你看。」", "probes": [
+      {"id": "s1a", "label": "盯着他每一步看他换没换", "cost": 0.0, "rel": 0.8},
+      {"id": "s1b", "label": "问这门法为何不自己发财", "cost": 0.0, "rel": 0.6}
+    ]},
+    {"id": 2, "name": "示信", "text": "炉中果然倒出成色不错的银块，秤一称，正好一两。\n丹客把银子推给你：「本银还你，利便当见面礼。」", "probes": [
+      {"id": "s2a", "label": "把这块银子拿给银匠验", "cost": 0.2, "rel": 0.85},
+      {"id": "s2b", "label": "要他当我面再炼一次", "cost": 0.1, "rel": 0.75}
+    ]},
+    {"id": 3, "name": "小试", "text": "第二回你亲自投铅，他也让你动手，出来的银成色一样好。\n「你手气比我强，我们合股吧。」", "probes": [
+      {"id": "s3a", "label": "炼前把铅料封存做记号", "cost": 0.1, "rel": 0.8}
+    ]},
+    {"id": 4, "name": "加注", "text": "丹客说需一大笔本银买辰砂与铅，炼一炉可分你七成。\n「你出三百两，我出方子与炉火，三月见效。」", "probes": [
+      {"id": "s4a", "label": "坚持本银不出你的铺子", "cost": 0.0, "rel": 0.85},
+      {"id": "s4b", "label": "要求全程在场并留字据", "cost": 0.3, "rel": 0.8}
+    ]},
+    {"id": 5, "name": "收网", "text": "炉火已点，丹客说火候不能断，须封门三日。\n你的三百两已投进料里。", "probes": [
+      {"id": "s5a", "label": "开炉验料再关门", "cost": 0.3, "rel": 0.9}
+    ]}
+  ],
+  "types": {
+    "honest": {"note": "真会炼丹，但成银极少，本银多半要蚀"},
+    "small_scam": {"note": "炉里有夹层，银是预先藏的"},
+    "long_con": {"note": "让你亲手操作，关门后连夜走人"}
+  },
+  "truth": {
+    "s1a": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s1b": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s2a": {"honest": 0, "small_scam": 1, "long_con": 0},
+    "s2b": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s3a": {"honest": 0, "small_scam": 0, "long_con": 1},
+    "s4a": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s4b": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s5a": {"honest": 0, "small_scam": 1, "long_con": 1}
+  },
+  "false_alarm": {"s1b": {"honest": 0.2}},
+  "optimal_exit": {"honest": 5, "small_scam": 4, "long_con": 2},
+  "payoff": {
+    "honest": {"early": -1, "mid": -1, "deal": -25},
+    "small_scam": {"early": -1, "mid": -6, "deal": -300},
+    "long_con": {"early": -1, "mid": -6, "deal": -300}
+  }
+}

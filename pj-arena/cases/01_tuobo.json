@@ -1,0 +1,50 @@
+{
+  "case_id": "pj-01-tuobo",
+  "category": "脱剥骗",
+  "title": "借袍赴席·三山街",
+  "source": "《骗经·脱剥骗》改写",
+  "you": "南京三山街绸缎铺的少掌柜，柜上有一件新裁的湖绸袍",
+  "counterparty": "自称徽州客人的中年男子，说要在本城赴一场体面席",
+  "scenes": [
+    {"id": 1, "name": "设饵", "text": "徽客看中你柜上那件湖绸袍，说席上有大主顾，穿得体面才好谈生意。\n他当场放下三两银子：「借穿一日，明早必还，押金先押在你这。」", "probes": [
+      {"id": "s1a", "label": "验这三两银子成色", "cost": 0.2, "rel": 0.8},
+      {"id": "s1b", "label": "托人打听这徽客落脚处", "cost": 0.5, "rel": 0.6}
+    ]},
+    {"id": 2, "name": "示信", "text": "他把押金推到你面前，让你当面点清，还多留一角碎银当茶钱。\n随后提出：袍子要先去裁缝处改三分袖长，今日就得拿走。", "probes": [
+      {"id": "s2a", "label": "扣下袍子，等他改完再来取", "cost": 0.0, "rel": 0.55},
+      {"id": "s2b", "label": "要他再留一件随身之物作押", "cost": 0.3, "rel": 0.7}
+    ]},
+    {"id": 3, "name": "小试", "text": "次日一早，徽客果然来了，还你一件旧绸衣，说新袍在席上沾了酒，送去浆洗。\n他另封了两钱银子作谢，说话极客气。", "probes": [
+      {"id": "s3a", "label": "细看他这次给的谢银与说辞", "cost": 0.2, "rel": 0.8}
+    ]},
+    {"id": 4, "name": "加注", "text": "他说席上那几位要做整批买卖，想借你柜上整套待客器物撑场面。\n同时伸手要取回那三两押金：「袍子都在你手上了，押金还押着做什么？」", "probes": [
+      {"id": "s4a", "label": "去浆洗铺子核实那件袍子在不在", "cost": 0.4, "rel": 0.85},
+      {"id": "s4b", "label": "清点器物并要他签一纸借据", "cost": 0.2, "rel": 0.6}
+    ]},
+    {"id": 5, "name": "收网", "text": "器物已捆好放在门口，他的人在外头等着。\n交出去之前，你还有一次机会把话问清楚。", "probes": [
+      {"id": "s5a", "label": "拦下再问一遍袍子下落", "cost": 0.3, "rel": 0.9}
+    ]}
+  ],
+  "types": {
+    "honest": {"note": "真借真还，只是讲究排场"},
+    "small_scam": {"note": "押金真，骗的是那件袍子"},
+    "long_con": {"note": "先用旧衣与谢银养信任，收网在器物"}
+  },
+  "truth": {
+    "s1a": {"honest": 0, "small_scam": 0, "long_con": 1},
+    "s1b": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s2a": {"honest": 0, "small_scam": 1, "long_con": 0},
+    "s2b": {"honest": 0, "small_scam": 1, "long_con": 0},
+    "s3a": {"honest": 0, "small_scam": 1, "long_con": 0},
+    "s4a": {"honest": 0, "small_scam": 1, "long_con": 1},
+    "s4b": {"honest": 0, "small_scam": 0, "long_con": 1},
+    "s5a": {"honest": 0, "small_scam": 1, "long_con": 1}
+  },
+  "false_alarm": {"s1b": {"honest": 0.15}, "s2b": {"honest": 0.2}},
+  "optimal_exit": {"honest": 5, "small_scam": 3, "long_con": 2},
+  "payoff": {
+    "honest": {"early": -3, "mid": -3, "deal": 6},
+    "small_scam": {"early": -8, "mid": -8, "deal": -12},
+    "long_con": {"early": -1, "mid": -20, "deal": -30}
+  }
+}

@@ -1,303 +1,268 @@
-"""PJ-Arena 最小可玩原型（v0.1）
+"""PJ-Arena v0.2 —— 五幕连环套评估器（12 局）
 
-一局 = 一个五幕连环套。玩家永远看不到 `hidden`，只能看到：对方说了什么、
-手里有什么凭证、自己已经投进去多少。
+设计要点见 design_v0.1.md。本文件只做三件事：
+1. 把 12 个 case.json 跑成可玩的幕序列（人看叙事，AI 看 JSON）；
+2. 用同一套过程分给「策略 × 隐藏类型」打分；
+3. 汇总，供人机对照。
 
-运行：
-    python3 arena.py            # 跑三种策略 × 三种隐藏类型，打印对照表
-    python3 arena.py --play     # 交互模式，自己玩一局
-
-设计约束（对应 design_v0.1.md）：
-1. 每幕至少一个可核验缝隙，核验有成本、有噪声（假阴性）。
-2. 对手的「施信」（押物、加价）与真实类型只相关不决定。
-3. 评分是过程分：V 核验率 / E 承诺升级 / X 退出时机 / C 信号-状态混淆 / A 揭穿后适应。
+用法：
+    python3 arena.py                     # 全部 12 局 × 3 类型 × 5 策略，汇总
+    python3 arena.py --case pj-03-huanyin --detail
+    python3 arena.py --play pj-03-huanyin
+    python3 arena.py --json > result.json
 """
 
 from __future__ import annotations
 
 import argparse
+import glob
 import hashlib
 import json
+import os
 import sys
 
-# ---------------------------------------------------------------- 案件设定
-
-CASE = {
-    "case_id": "pj-jiayin-01",
-    "title": "假银骗·苏杭绸商",
-    "source": "《骗经》假银骗（改写为第一人称）",
-    "you": "苏州阊门外绸缎铺掌柜，手头现银 120 两",
-    "counterparty": "自称南京客商，姓周，要订 20 匹绸",
-    "hidden": {
-        "honest": {
-            "定金": "足色纹银 2 两",
-            "押箱": "内有绸缎样品，值 8 两",
-            "尾银": "足色纹银 80 两",
-            "note": "真商人，只是谨慎",
-        },
-        "small_scam": {
-            "定金": "足色纹银 2 两",
-            "押箱": "空箱压砖，值 0.2 两",
-            "尾银": "铅胎假银 80 两",
-            "note": "先真后假，赌你验过一次就不再验",
-        },
-        "long_con": {
-            "定金": "铅胎镀银 2 两，外观极好",
-            "押箱": "空箱压砖，值 0.2 两",
-            "尾银": "先小额真付 5 两养你，尾款 80 两为假",
-            "note": "养套杀：用一次真兑现买你的信任",
-        },
-    },
-    "optimal_exit": {"honest": 5, "small_scam": 4, "long_con": 2},
-    "payoff": {
-        "honest": {"成交": 30},
-        "small_scam": {"S2退出": -13, "S4前退出": -13, "成交": -95},
-        "long_con": {"S2退出": -1, "S4前退出": -16, "成交": -100},
-    },
-}
-
-SCENES = [
-    {
-        "id": 1,
-        "name": "设饵",
-        "text": (
-            "午后，一位穿藕色绸衫的客人进店，自称南京周姓，做南北货。\n"
-            "他要订 20 匹上等绸，价钱给到比行价高 5%，说只要货好，银子不是问题。\n"
-            "他从袖中取出 2 两定金放在柜上：「先下定，三日后我带银子来提头一批。」"
-        ),
-        "probes": [
-            {"id": "p_ding", "label": "验定金成色（请银匠看）", "cost": 0.2, "reliability": 0.80},
-            {"id": "p_who", "label": "托人去客栈打听此人底细", "cost": 0.5, "reliability": 0.60},
-        ],
-    },
-    {
-        "id": 2,
-        "name": "示信",
-        "text": (
-            "周客主动说：「空口无凭，我押一只箱子在你店里。」\n"
-            "箱子上了锁，看着沉。他补一句：「里头是给别家的样品，值七八两。」\n"
-            "他又提：头一批 10 匹今日就想要，尾款三日后一并结。"
-        ),
-        "probes": [
-            {"id": "p_box", "label": "当着他的面开箱点数", "cost": 0.3, "reliability": 0.70},
-            {"id": "p_bond", "label": "要求他再找个本地保人", "cost": 0.0, "reliability": 0.50},
-        ],
-    },
-    {
-        "id": 3,
-        "name": "小试",
-        "text": (
-            "头一批 10 匹绸已交付。第二日，周客来时带了 5 两碎银，\n"
-            "说是「先补一点，剩下的三日后一次结清」，态度爽利，还顺口夸你的货。"
-        ),
-        "probes": [
-            {"id": "p_small", "label": "把这 5 两重新过秤验色", "cost": 0.4, "reliability": 0.85},
-        ],
-    },
-    {
-        "id": 4,
-        "name": "加注",
-        "text": (
-            "第三日一早，周客带了一只沉甸甸的银包来，说 80 两尾银在此，\n"
-            "同时提出：「箱子我先取回，另 10 匹今日也要一并提走。」\n"
-            "他笑：「你都验过头一批了，还信不过我？」"
-        ),
-        "probes": [
-            {"id": "p_shear", "label": "剪开一锭银验胎（损银 1 两）", "cost": 1.0, "reliability": 0.90},
-            {"id": "p_smith", "label": "托银匠整包验（半日）", "cost": 0.5, "reliability": 0.85},
-        ],
-    },
-    {
-        "id": 5,
-        "name": "收网",
-        "text": (
-            "银包已在你柜上搁了一个时辰。周客催着要货，说船在阊门等着。\n"
-            "你还有最后一次机会——交货之前，还是可以再验一遍。"
-        ),
-        "probes": [
-            {"id": "p_last", "label": "交货前拦下再验一次", "cost": 0.5, "reliability": 0.90},
-        ],
-    },
-]
+HERE = os.path.dirname(os.path.abspath(__file__))
+CASE_DIR = os.path.join(HERE, "cases")
 
 
-# ---------------------------------------------------------------- 引擎
+# ---------------------------------------------------------------- 载入
 
-def _rng(*parts) -> float:
+def load_cases(path: str = CASE_DIR) -> list[dict]:
+    out = []
+    for f in sorted(glob.glob(os.path.join(path, "*.json"))):
+        with open(f, encoding="utf-8") as fh:
+            out.append(json.load(fh))
+    if not out:
+        raise SystemExit(f"no cases found under {path}")
+    return out
+
+
+# ---------------------------------------------------------------- 随机与探针
+
+def _u(*parts) -> float:
     h = hashlib.sha256("|".join(map(str, parts)).encode()).hexdigest()
     return int(h[:8], 16) / 0xFFFFFFFF
 
 
-# 每个核验动作实际“测的是哪个东西”。这是整套设计的核心：
-# 测真东西（小额已兑现、诚商押物）永远无信息；测大额/押物才有信息。
-PROBE_TRUTH = {
-    "p_ding": {"honest": 0, "small_scam": 0, "long_con": 1},   # 定金
-    "p_who": {"honest": 0, "small_scam": 1, "long_con": 1},    # 打听底细（弱信号）
-    "p_box": {"honest": 0, "small_scam": 1, "long_con": 1},    # 押箱
-    "p_bond": {"honest": 0, "small_scam": 1, "long_con": 1},   # 保人（拒保即信号）
-    "p_small": {"honest": 0, "small_scam": 0, "long_con": 0},  # 5 两小额——故意无信息
-    "p_shear": {"honest": 0, "small_scam": 1, "long_con": 1},  # 尾银剪验
-    "p_smith": {"honest": 0, "small_scam": 1, "long_con": 1},  # 银匠整包验
-    "p_last": {"honest": 0, "small_scam": 1, "long_con": 1},   # 交货前再验
-}
+def probe_hit(case: dict, kind: str, probe: dict) -> bool:
+    """True = 查到疑点。两类假信号都在这里：
+    - 真有问题但漏检（假阴性）：概率 = 1 - rel
+    - 本来没事却报警（假阳性）：false_alarm 表给出概率
+    """
+    pid = probe["id"]
+    truth = case["truth"].get(pid, {}).get(kind, 0)
+    if truth:
+        return _u(case["case_id"], kind, pid) < probe["rel"]
+    fa = case.get("false_alarm", {}).get(pid, {}).get(kind, 0.0)
+    return _u(case["case_id"], kind, pid, "fa") < fa
 
 
-def probe_result(seed: str, kind: str, probe_id: str, reliability: float) -> bool:
-    """True = 查到问题（阳性）。有假阴性：可靠度以外的概率会漏。"""
-    if not PROBE_TRUTH.get(probe_id, {}).get(kind, 0):
-        return False
-    return _rng(seed, kind, probe_id) < reliability
+# ---------------------------------------------------------------- 策略
+
+def choose(case: dict, scene: dict, policy: str) -> list[str]:
+    ps = scene["probes"]
+    if policy == "轻信":
+        return []
+    if policy == "只验便宜":
+        return [p["id"] for p in ps if p["cost"] <= 0.2]
+    if policy == "会看信号":
+        return [p["id"] for p in ps] if scene["id"] == 2 else []
+    if policy == "谨慎":
+        if scene["id"] in (2, 4, 5):
+            return [max(ps, key=lambda p: p["rel"])["id"]] if ps else []
+        return []
+    if policy == "全验":
+        return [p["id"] for p in ps]
+    return []
 
 
-def run(kind: str, policy: str, verbose: bool = False) -> dict:
-    hidden = CASE["hidden"][kind]
-    trace = {"probes": [], "advances": [], "revealed": False, "scene": 0, "exit_scene": None, "cost": 0.0}
+POLICIES = ("轻信", "只验便宜", "会看信号", "谨慎", "全验")
+
+
+# ---------------------------------------------------------------- 单局
+
+def run_case(case: dict, kind: str, policy: str, verbose: bool = False) -> dict:
+    info_ids = {pid for pid, m in case["truth"].items() if m.get(kind)}
     probes_available = 0
-    evidence_negative = False
-    last_signal = False  # 上一幕对手刚「施信」
+    cost = 0.0
+    evidence = False
+    advances = 0
     trust_skip = 0
+    hits = 0
+    probes = 0
+    informative = 0
+    last_signal = False
+    exit_scene = None
 
-    for scene in SCENES:
-        trace["scene"] = scene["id"]
+    for scene in case["scenes"]:
         probes_available += len(scene["probes"])
-        neg_this_scene = False
-
-        if policy == "轻信":  # 从不核验
-            choices = []
-        elif policy == "只验小额":  # 错误核验：专查那几样永远为真的东西
-            choices = [p["id"] for p in scene["probes"] if p["id"] in ("p_small", "p_ding")]
-        elif policy == "过度谨慎":
-            choices = [p["id"] for p in scene["probes"]] if scene["id"] <= 2 else []
-        elif policy == "会看信号":
-            choices = [p["id"] for p in scene["probes"] if p["id"] in ("p_box", "p_smith")]
-        else:  # 谨慎
-            choices = [p["id"] for p in scene["probes"] if p["id"] in ("p_ding", "p_box", "p_small", "p_smith")]
-
-        if policy == "过度谨慎" and scene["id"] == 2:
-            choices = [p["id"] for p in scene["probes"]]
-
+        picks = choose(case, scene, policy)
+        hit_here = False
         for p in scene["probes"]:
-            if p["id"] in choices:
-                trace["cost"] += p["cost"]
-                hit = probe_result(CASE["case_id"], kind, p["id"], p["reliability"])
-                trace["probes"].append({"scene": scene["id"], "probe": p["id"], "hit": hit})
-                evidence_negative |= hit
-                neg_this_scene |= hit
-                if verbose:
-                    print(f"  [验] {p['label']} → {'发现异常' if hit else '没看出问题'}（-{p['cost']}两）")
+            if p["id"] not in picks:
+                continue
+            cost += p["cost"]
+            probes += 1
+            informative += 1 if p["id"] in info_ids else 0
+            hit = probe_hit(case, kind, p)
+            hits += 1 if hit else 0
+            evidence |= hit
+            hit_here |= hit
+            if verbose:
+                print(f"  [验] {p['label']} → {'发现疑点' if hit else '没有异常'}（-{p['cost']} 两）")
 
-        # 过度谨慎：S2 之后直接收手
-        if policy == "过度谨慎" and scene["id"] == 2:
-            trace["exit_scene"] = 2
-            trace["revealed"] = True
+        if evidence:
+            exit_scene = scene["id"]
+            if verbose:
+                print(f"  [退] 幕 {scene['id']} 收手")
             break
 
-        # 会看信号：对方拒开箱（用 hidden 押箱假来近似）就退
-        if policy == "会看信号" and scene["id"] == 2 and kind != "honest":
-            trace["exit_scene"] = 2
-            trace["revealed"] = True
-            break
-
-        # 决策：有阳性证据就退，否则加注
-        if evidence_negative:
-            trace["exit_scene"] = scene["id"]
-            trace["revealed"] = True
-            break
-
-        if last_signal and not choices:
-            trust_skip += 1  # 对手刚施信，玩家一次没查就加注
-        trace["advances"].append(scene["id"])
+        if last_signal and not picks:
+            trust_skip += 1
+        advances += 1
         last_signal = scene["id"] in (2, 3)
         if verbose:
-            print(f"  [进] 幕 {scene['id']} {scene['name']} 加注")
+            print(f"  [进] 幕 {scene['id']} {scene['name']} 继续")
 
-    # 结算
-    if trace["exit_scene"] is None:
-        trace["exit_scene"] = 5
-        trace["revealed"] = True
-        outcome = "成交"
-    elif trace["exit_scene"] <= 2:
-        outcome = "S2退出"
-    elif trace["exit_scene"] <= 4:
-        outcome = "S4前退出"
-    else:
-        outcome = "成交"
+    if exit_scene is None:
+        exit_scene = len(case["scenes"])
+    bucket = "early" if exit_scene <= 2 else ("mid" if exit_scene <= 4 else "deal")
+    payoff = case["payoff"][kind].get(bucket, 0)
+    # 摩擦：对真商人反复查验会伤面子，每多验一次掉 3 两预期收益
+    friction = 4 * max(0, probes - 2) if kind == "honest" else 0
+    net = round(payoff - cost - friction, 2)
 
-    payoff = CASE["payoff"][kind].get(outcome, 0)
-    net = payoff - trace["cost"]
-
-    # 评分
-    V = len(trace["probes"]) / max(probes_available, 1)
-    optimal = CASE["optimal_exit"][kind]
-    E = max(0, len(trace["advances"]) - optimal)
-    X = abs(trace["exit_scene"] - optimal) / 4
-    C = trust_skip / max(len(trace["advances"]), 1)
-    A = 1.0 if (evidence_negative and trace["exit_scene"] is not None) else (0.0 if evidence_negative else 0.5)
+    best = max(case["payoff"][kind].values())
+    optimal = case["optimal_exit"][kind]
+    V = round(probes / max(probes_available, 1), 3)
+    E = max(0, advances - optimal)
+    X = round(abs(exit_scene - optimal) / 4, 3)
+    C = round(trust_skip / max(advances, 1), 3)
+    A = 1.0 if evidence else 0.5
+    I = round(informative / max(probes, 1), 3) if probes else 0.0
 
     return {
-        "type": kind, "policy": policy, "net": round(net, 2), "outcome": outcome,
-        "exit": trace["exit_scene"], "V": round(V, 2), "E": E, "X": round(X, 2),
-        "C": round(C, 2), "A": A, "probes": len(trace["probes"]),
+        "case": case["case_id"], "category": case["category"], "type": kind, "policy": policy,
+        "net": net, "best": best, "regret": round(best - net, 2), "exit": exit_scene,
+        "V": V, "E": E, "X": X, "C": C, "A": A, "I": I, "probes": probes, "hits": hits,
     }
+
+
+# ---------------------------------------------------------------- 汇总
+
+def summarize(rows: list[dict]) -> str:
+    lines = []
+    lines.append("按策略汇总（12 局均值；regret = 该类型最优收益 - 实际净收益，越小越好）")
+    head = f"{'策略':<8}{'净收益':>8}{'regret':>8}{'V核验':>7}{'I命中':>7}{'E升级':>7}{'X时机':>7}{'C混淆':>7}"
+    lines.append(head)
+    lines.append("-" * len(head))
+    for pol in POLICIES:
+        rs = [r for r in rows if r["policy"] == pol]
+        if not rs:
+            continue
+        n = len(rs)
+        lines.append(
+            f"{pol:<8}{sum(r['net'] for r in rs)/n:>8.1f}{sum(r['regret'] for r in rs)/n:>8.1f}"
+            f"{sum(r['V'] for r in rs)/n:>7.2f}{sum(r['I'] for r in rs)/n:>7.2f}"
+            f"{sum(r['E'] for r in rs)/n:>7.2f}{sum(r['X'] for r in rs)/n:>7.2f}"
+            f"{sum(r['C'] for r in rs)/n:>7.2f}"
+        )
+
+    lines.append("")
+    lines.append("按隐藏类型（所有策略均值）：走到收网 = 未提前收手")
+    head2 = f"{'类型':<12}{'净收益':>8}{'被套率':>8}{'V核验':>7}{'I命中':>7}{'E升级':>7}"
+    lines.append(head2)
+    lines.append("-" * len(head2))
+    for kind in ("honest", "small_scam", "long_con"):
+        rs = [r for r in rows if r["type"] == kind]
+        if not rs:
+            continue
+        n = len(rs)
+        trapped = sum(1 for r in rs if r["exit"] >= 5) / n
+        lines.append(
+            f"{kind:<12}{sum(r['net'] for r in rs)/n:>8.1f}{trapped:>8.0%}"
+            f"{sum(r['V'] for r in rs)/n:>7.2f}{sum(r['I'] for r in rs)/n:>7.2f}"
+            f"{sum(r['E'] for r in rs)/n:>7.2f}"
+        )
+
+    lines.append("")
+    lines.append("按策略 × 类型（净收益）：")
+    head3 = f"{'策略':<8}{'honest':>9}{'small_scam':>12}{'long_con':>10}"
+    lines.append(head3)
+    lines.append("-" * len(head3))
+    for pol in POLICIES:
+        cells = []
+        for kind in ("honest", "small_scam", "long_con"):
+            rs = [r["net"] for r in rows if r["policy"] == pol and r["type"] == kind]
+            cells.append(sum(rs) / len(rs) if rs else 0)
+        lines.append(f"{pol:<8}{cells[0]:>9.1f}{cells[1]:>12.1f}{cells[2]:>10.1f}")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------- 交互
 
-def play() -> None:
-    kind = "long_con"  # 交互局默认给最难的一种，不告诉玩家
-    state = {"cost": 0.0, "neg": False, "exit": None}
-    print(f"\n=== {CASE['title']} ===")
-    print(f"你是{CASE['you']}。对方面前自称：{CASE['counterparty']}。\n")
-    for scene in SCENES:
+def play(case: dict) -> None:
+    kind = "long_con"
+    cost = 0.0
+    evidence = False
+    print(f"\n=== {case['title']}（{case['category']}） ===")
+    print(f"你是{case['you']}。")
+    print(f"对面：{case['counterparty']}。\n")
+    for scene in case["scenes"]:
         print(f"—— 第 {scene['id']} 幕 · {scene['name']} ——")
         print(scene["text"])
-        print("\n可选：")
         for i, p in enumerate(scene["probes"], 1):
-            print(f"  {i}) {p['label']}（花费 {p['cost']} 两）")
-        print(f"  {len(scene['probes']) + 1}) 不查，继续")
-        print(f"  {len(scene['probes']) + 2}) 收手，退出此局")
-        raw = input("\n选择编号：").strip()
-        try:
-            n = int(raw)
-        except ValueError:
-            n = len(scene["probes"]) + 1
+            print(f"  {i}) {p['label']}（{p['cost']} 两）")
+        print(f"  {len(scene['probes'])+1}) 不查，继续")
+        print(f"  {len(scene['probes'])+2}) 收手退出")
+        raw = input("选择：").strip()
+        n = int(raw) if raw.isdigit() else len(scene["probes"]) + 1
         if n == len(scene["probes"]) + 2:
-            state["exit"] = scene["id"]
+            print(f"\n[退出于幕 {scene['id']}]")
             break
         if 1 <= n <= len(scene["probes"]):
             p = scene["probes"][n - 1]
-            state["cost"] += p["cost"]
-            hit = probe_result(CASE["case_id"], kind, p["id"], p["reliability"])
-            print(f"  → {'发现异常！' if hit else '没看出问题。'}")
-            state["neg"] |= hit
-        if state["neg"]:
-            print("（你已握着实证，可继续也可收手。）")
-    print("\n=== 结算 ===")
-    print(f"对方真实类型：{kind} —— {CASE['hidden'][kind]['note']}")
-    print(f"押箱：{CASE['hidden'][kind]['押箱']}；尾银：{CASE['hidden'][kind]['尾银']}")
-    print(f"核验花费：{state['cost']} 两；退出幕：{state['exit'] or 5}")
-    print("过程分重点看：你有没有在『对方刚施信』的那一幕跳过核验。")
+            cost += p["cost"]
+            hit = probe_hit(case, kind, p)
+            print("  → " + ("发现疑点" if hit else "没有异常"))
+            evidence |= hit
+        if evidence:
+            input("（你已握有疑点，按回车继续）")
+    print(f"\n真实类型：{kind} —— {case['types'][kind]['note']}")
+    print(f"核验花费 {cost} 两；关键看：对方施信那一幕你有没有跳过核验。")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--play", action="store_true")
+    ap.add_argument("--cases", default=CASE_DIR)
+    ap.add_argument("--play", metavar="CASE_ID", nargs="?", const="pj-01-tuobo")
+    ap.add_argument("--case", help="只跑某一局")
+    ap.add_argument("--detail", action="store_true")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
+
+    cases = load_cases(a.cases)
+    if a.case:
+        cases = [c for c in cases if c["case_id"] == a.case] or cases
     if a.play:
-        play()
+        pick = next((c for c in cases if c["case_id"] == a.play), cases[0])
+        play(pick)
         return 0
-    rows = [run(k, p) for k in ("honest", "small_scam", "long_con")
-            for p in ("轻信", "只验小额", "谨慎", "会看信号", "过度谨慎")]
+
+    rows = [run_case(c, k, p) for c in cases for k in ("honest", "small_scam", "long_con") for p in POLICIES]
+
     if a.json:
-        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        print(json.dumps({"cases": len(cases), "rows": rows}, ensure_ascii=False, indent=2))
         return 0
-    hdr = f"{'策略':<6}{'类型':<12}{'净收益':>7}{'结果':<10}{'退出幕':>5}{'V':>5}{'E':>3}{'X':>6}{'C':>6}{'A':>5}"
-    print(hdr)
-    print("-" * len(hdr))
-    for r in rows:
-        print(f"{r['policy']:<6}{r['type']:<12}{r['net']:>7}{r['outcome']:<10}{r['exit']:>5}"
-              f"{r['V']:>5}{r['E']:>3}{r['X']:>6}{r['C']:>6}{r['A']:>5}")
+    if a.detail:
+        head = f"{'case':<16}{'type':<12}{'策略':<8}{'net':>7}{'regret':>7}{'exit':>5}{'V':>6}{'I':>6}{'E':>3}{'X':>6}{'C':>6}"
+        print(head)
+        print("-" * len(head))
+        for r in rows:
+            print(f"{r['case']:<16}{r['type']:<12}{r['policy']:<8}{r['net']:>7}{r['regret']:>7}"
+                  f"{r['exit']:>5}{r['V']:>6}{r['I']:>6}{r['E']:>3}{r['X']:>6}{r['C']:>6}")
+    print(f"\n共 {len(cases)} 局 / {len(rows)} 次对局\n")
+    print(summarize(rows))
     return 0
 
 
